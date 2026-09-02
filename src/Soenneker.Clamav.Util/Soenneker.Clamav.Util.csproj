@@ -46,6 +46,9 @@
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
         <PackageReference Include="Soenneker.Clamav.Linux" Version="4.0.3" PrivateAssets="analyzers;build" />
         <PackageReference Include="Soenneker.Clamav.Windows" Version="4.0.1" PrivateAssets="analyzers;build" />
+        <PackageReference Include="Soenneker.Utils.Directory" Version="4.0.916" />
+        <PackageReference Include="Soenneker.Utils.File" Version="4.0.2246" />
+        <PackageReference Include="Soenneker.Utils.Path" Version="4.0.1209" />
         <PackageReference Include="Soenneker.Utils.Process" Version="4.0.1534" />
     </ItemGroup>
 </Project>

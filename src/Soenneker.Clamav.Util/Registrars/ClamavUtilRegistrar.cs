@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Soenneker.Clamav.Util.Abstract;
+using Soenneker.Utils.Directory.Registrars;
+using Soenneker.Utils.File.Registrars;
 using Soenneker.Utils.Process.Registrars;
 
 namespace Soenneker.Clamav.Util.Registrars;
@@ -15,7 +17,9 @@ public static class ClamavUtilRegistrar
     /// </summary>
     public static IServiceCollection AddClamavUtilAsSingleton(this IServiceCollection services)
     {
-        services.AddProcessUtilAsSingleton()
+        services.AddDirectoryUtilAsSingleton()
+                .AddFileUtilAsSingleton()
+                .AddProcessUtilAsSingleton()
                 .TryAddSingleton<IClamavUtil, ClamavUtil>();
 
         return services;
@@ -26,7 +30,9 @@ public static class ClamavUtilRegistrar
     /// </summary>
     public static IServiceCollection AddClamavUtilAsScoped(this IServiceCollection services)
     {
-        services.AddProcessUtilAsScoped()
+        services.AddDirectoryUtilAsScoped()
+                .AddFileUtilAsScoped()
+                .AddProcessUtilAsScoped()
                 .TryAddScoped<IClamavUtil, ClamavUtil>();
 
         return services;
