@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Soenneker.Clamav.Util.Abstract;
+using Soenneker.Extensions.ValueTask;
 using Soenneker.Tests.HostedUnit;
 
 namespace Soenneker.Clamav.Util.Tests;
@@ -17,7 +18,7 @@ public sealed class ClamavUtilTests : HostedUnitTest
     [Test]
     public async Task Gets_bundled_version()
     {
-        string version = await _util.GetVersion();
+        string version = await _util.GetVersion().NoSync();
         await Assert.That(version).StartsWith("ClamAV ");
     }
 

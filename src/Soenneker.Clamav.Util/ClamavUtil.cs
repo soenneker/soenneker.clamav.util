@@ -2,16 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Soenneker.Clamav.Util.Abstract;
 using Soenneker.Clamav.Util.Options;
 using Soenneker.Clamav.Util.Results;
+using Soenneker.Extensions.Task;
+using Soenneker.Extensions.ValueTask;
 using Soenneker.Utils.Directory.Abstract;
 using Soenneker.Utils.File.Abstract;
 using Soenneker.Utils.Path.Abstract;
+using Soenneker.Utils.PooledStringBuilders;
 using Soenneker.Utils.Process.Abstract;
+using Soenneker.Utils.Runtime;
 
 namespace Soenneker.Clamav.Util;
 
@@ -39,7 +42,7 @@ public sealed class ClamavUtil : IClamavUtil
         _pathUtil = pathUtil ?? throw new ArgumentNullException(nameof(pathUtil));
         EnsureSupportedPlatform();
 
-        bool windows = OperatingSystem.IsWindows();
+        bool windows = RuntimeUtil.IsWindows();
         string runtimeIdentifier = windows ? "win-x64" : "linux-x64";
         _runtimeDirectory = Path.Combine(AppContext.BaseDirectory, "Resources", runtimeIdentifier, "clamav");
         string binaryDirectory = windows ? _runtimeDirectory : Path.Combine(_runtimeDirectory, "bin");
@@ -58,10 +61,10 @@ public sealed class ClamavUtil : IClamavUtil
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         string fullPath = Path.GetFullPath(path);
 
-        if (await _fileUtil.Exists(fullPath, cancellationToken))
-            return await ScanFile(fullPath, options, cancellationToken);
-        if (await _directoryUtil.Exists(fullPath, cancellationToken))
-            return await ScanDirectory(fullPath, options, cancellationToken);
+        if (await _fileUtil.Exists(fullPath, cancellationToken).NoSync())
+            return await ScanFile(fullPath, options, cancellationToken).NoSync();
+        if (await _directoryUtil.Exists(fullPath, cancellationToken).NoSync())
+            return await ScanDirectory(fullPath, options, cancellationToken).NoSync();
 
         throw new FileNotFoundException("The ClamAV scan target was not found.", fullPath);
     }
@@ -71,10 +74,10 @@ public sealed class ClamavUtil : IClamavUtil
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         string fullPath = Path.GetFullPath(filePath);
-        if (!await _fileUtil.Exists(fullPath, cancellationToken))
+        if (!await _fileUtil.Exists(fullPath, cancellationToken).NoSync())
             throw new FileNotFoundException("The file to scan was not found.", fullPath);
 
-        return await ScanCore(fullPath, isDirectory: false, options ?? new ClamavScanOptions(), cancellationToken);
+        return await ScanCore(fullPath, isDirectory: false, options ?? new ClamavScanOptions(), cancellationToken).NoSync();
     }
 
     public async ValueTask<ClamavScanResult> ScanDirectory(string directoryPath, ClamavScanOptions? options = null,
@@ -82,32 +85,32 @@ public sealed class ClamavUtil : IClamavUtil
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directoryPath);
         string fullPath = Path.GetFullPath(directoryPath);
-        if (!await _directoryUtil.Exists(fullPath, cancellationToken))
+        if (!await _directoryUtil.Exists(fullPath, cancellationToken).NoSync())
             throw new DirectoryNotFoundException($"The directory to scan was not found: {fullPath}");
 
-        return await ScanCore(fullPath, isDirectory: true, options ?? new ClamavScanOptions(), cancellationToken);
+        return await ScanCore(fullPath, isDirectory: true, options ?? new ClamavScanOptions(), cancellationToken).NoSync();
     }
 
     public async ValueTask<IReadOnlyList<string>> UpdateDefinitions(string? databaseDirectory = null,
         CancellationToken cancellationToken = default)
     {
-        await EnsureToolExists(_freshclamPath, "freshclam", cancellationToken);
+        await EnsureToolExists(_freshclamPath, "freshclam", cancellationToken).NoSync();
         EnsureExecutable(_freshclamPath);
 
         string fullDatabaseDirectory = GetDatabaseDirectory(databaseDirectory);
-        await _directoryUtil.Create(fullDatabaseDirectory, log: false, cancellationToken);
+        await _directoryUtil.Create(fullDatabaseDirectory, log: false, cancellationToken).NoSync();
         string configurationPath = Path.Combine(fullDatabaseDirectory, "freshclam.conf");
 
-        await _definitionLock.WaitAsync(cancellationToken);
+        await _definitionLock.WaitAsync(cancellationToken).NoSync();
         try
         {
             string configuration = BuildFreshclamConfiguration();
-            await _fileUtil.Write(configurationPath, configuration, log: false, cancellationToken);
+            await _fileUtil.Write(configurationPath, configuration, log: false, cancellationToken).NoSync();
 
             string arguments = $"--config-file={Quote(configurationPath)} --datadir={Quote(fullDatabaseDirectory)} " +
                                $"--cvdcertsdir={Quote(_certificatesDirectory)} --stdout";
             return await _processUtil.Start(_freshclamPath, _runtimeDirectory, arguments, log: false,
-                environmentalVars: _environmentVariables, cancellationToken: cancellationToken);
+                environmentalVars: _environmentVariables, cancellationToken: cancellationToken).NoSync();
         }
         finally
         {
@@ -117,11 +120,11 @@ public sealed class ClamavUtil : IClamavUtil
 
     public async ValueTask<string> GetVersion(CancellationToken cancellationToken = default)
     {
-        await EnsureToolExists(_scannerPath, "clamscan", cancellationToken);
+        await EnsureToolExists(_scannerPath, "clamscan", cancellationToken).NoSync();
         EnsureExecutable(_scannerPath);
 
         List<string> output = await _processUtil.Start(_scannerPath, _runtimeDirectory, "--version", log: false,
-            environmentalVars: _environmentVariables, cancellationToken: cancellationToken);
+            environmentalVars: _environmentVariables, cancellationToken: cancellationToken).NoSync();
         return output.Count == 0 ? string.Empty : output[0];
     }
 
@@ -129,19 +132,19 @@ public sealed class ClamavUtil : IClamavUtil
         CancellationToken cancellationToken)
     {
         Validate(options);
-        await EnsureToolExists(_scannerPath, "clamscan", cancellationToken);
+        await EnsureToolExists(_scannerPath, "clamscan", cancellationToken).NoSync();
         EnsureExecutable(_scannerPath);
 
         string databaseDirectory = GetDatabaseDirectory(options.DatabaseDirectory);
-        if (!await HasDefinitions(databaseDirectory, cancellationToken))
+        if (!await HasDefinitions(databaseDirectory, cancellationToken).NoSync())
         {
             if (!options.UpdateDefinitionsIfMissing)
                 throw new InvalidOperationException($"No ClamAV virus definitions were found in '{databaseDirectory}'.");
 
-            await UpdateDefinitions(databaseDirectory, cancellationToken);
+            await UpdateDefinitions(databaseDirectory, cancellationToken).NoSync();
         }
 
-        string logPath = await _pathUtil.GetRandomTempFilePath(".log", cancellationToken);
+        string logPath = await _pathUtil.GetRandomTempFilePath(".log", cancellationToken).NoSync();
         string arguments = BuildScanArguments(targetPath, databaseDirectory, logPath, isDirectory, options);
         List<string> output;
         bool infected = false;
@@ -151,7 +154,7 @@ public sealed class ClamavUtil : IClamavUtil
             try
             {
                 output = await _processUtil.Start(_scannerPath, _runtimeDirectory, arguments, timeout: options.Timeout, log: false,
-                    environmentalVars: _environmentVariables, cancellationToken: cancellationToken);
+                    environmentalVars: _environmentVariables, cancellationToken: cancellationToken).NoSync();
             }
             catch (InvalidOperationException exception) when (IsThreatExitCode(exception))
             {
@@ -159,24 +162,26 @@ public sealed class ClamavUtil : IClamavUtil
                 output = ExtractOutput(exception);
             }
 
-            if (await _fileUtil.Exists(logPath, cancellationToken))
-                output = await _fileUtil.ReadAsLines(logPath, log: false, cancellationToken);
+            if (await _fileUtil.Exists(logPath, cancellationToken).NoSync())
+                output = await _fileUtil.ReadAsLines(logPath, log: false, cancellationToken).NoSync();
 
             List<ClamavDetection> detections = ParseDetections(output);
             return new ClamavScanResult(targetPath, infected, detections, output);
         }
         finally
         {
-            await _fileUtil.TryDelete(logPath, log: false, CancellationToken.None);
+            await _fileUtil.TryDelete(logPath, log: false, CancellationToken.None).NoSync();
         }
     }
 
     private string BuildScanArguments(string targetPath, string databaseDirectory, string logPath, bool isDirectory, ClamavScanOptions options)
     {
-        var builder = new StringBuilder(256);
-        builder.Append("--database=").Append(Quote(databaseDirectory))
-               .Append(" --log=").Append(Quote(logPath))
-               .Append(" --stdout");
+        using var builder = new PooledStringBuilder(256);
+        builder.Append("--database=");
+        builder.Append(Quote(databaseDirectory));
+        builder.Append(" --log=");
+        builder.Append(Quote(logPath));
+        builder.Append(" --stdout");
 
         if (isDirectory)
             builder.Append(options.Recursive ? " --recursive=yes" : " --recursive=no");
@@ -187,7 +192,8 @@ public sealed class ClamavUtil : IClamavUtil
 
         builder.Append(options.FollowFileSymbolicLinks ? " --follow-file-symlinks=2" : " --follow-file-symlinks=0");
         builder.Append(options.FollowDirectorySymbolicLinks ? " --follow-dir-symlinks=2" : " --follow-dir-symlinks=0");
-        builder.Append(' ').Append(Quote(targetPath));
+        builder.Append(' ');
+        builder.Append(Quote(targetPath));
         return builder.ToString();
     }
 
@@ -230,26 +236,29 @@ public sealed class ClamavUtil : IClamavUtil
 
     private static string BuildFreshclamConfiguration()
     {
-        var builder = new StringBuilder()
-            .AppendLine("DatabaseMirror database.clamav.net")
-            .AppendLine("ScriptedUpdates yes")
-            .AppendLine("CompressLocalDatabase no")
-            .AppendLine("Checks 12");
+        using var builder = new PooledStringBuilder(160);
+        builder.AppendLine("DatabaseMirror database.clamav.net");
+        builder.AppendLine("ScriptedUpdates yes");
+        builder.AppendLine("CompressLocalDatabase no");
+        builder.AppendLine("Checks 12");
 
-        if (OperatingSystem.IsLinux())
-            builder.Append("DatabaseOwner ").AppendLine(Environment.UserName);
+        if (RuntimeUtil.IsLinux())
+        {
+            builder.Append("DatabaseOwner ");
+            builder.AppendLine(Environment.UserName);
+        }
 
         return builder.ToString();
     }
 
     private async ValueTask<bool> HasDefinitions(string directory, CancellationToken cancellationToken)
     {
-        if (!await _directoryUtil.Exists(directory, cancellationToken))
+        if (!await _directoryUtil.Exists(directory, cancellationToken).NoSync())
             return false;
 
         foreach (string extension in _definitionExtensions)
         {
-            if ((await _directoryUtil.GetFilesByExtension(directory, extension, recursive: false, cancellationToken)).Count > 0)
+            if ((await _directoryUtil.GetFilesByExtension(directory, extension, recursive: false, cancellationToken).NoSync()).Count > 0)
                 return true;
         }
 
@@ -288,7 +297,7 @@ public sealed class ClamavUtil : IClamavUtil
 
     private async ValueTask EnsureToolExists(string path, string tool, CancellationToken cancellationToken)
     {
-        if (!await _fileUtil.Exists(path, cancellationToken))
+        if (!await _fileUtil.Exists(path, cancellationToken).NoSync())
             throw new FileNotFoundException($"The bundled {tool} executable was not found.", path);
     }
 
@@ -306,7 +315,7 @@ public sealed class ClamavUtil : IClamavUtil
     private static void EnsureSupportedPlatform()
     {
         if (RuntimeInformation.ProcessArchitecture != Architecture.X64 ||
-            (!OperatingSystem.IsLinux() && !OperatingSystem.IsWindows()))
+            (!RuntimeUtil.IsLinux() && !RuntimeUtil.IsWindows()))
             throw new PlatformNotSupportedException("Soenneker.Clamav.Util currently supports Linux x64 and Windows x64.");
     }
 
