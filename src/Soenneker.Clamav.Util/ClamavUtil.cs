@@ -14,6 +14,7 @@ using Soenneker.Extensions.ValueTask;
 using Soenneker.Utils.Directory.Abstract;
 using Soenneker.Utils.File.Abstract;
 using Soenneker.Utils.Path.Abstract;
+using Soenneker.Utils.Paths.Resources.Abstract;
 using Soenneker.Utils.PooledStringBuilders;
 using Soenneker.Utils.Process.Abstract;
 using Soenneker.Utils.Runtime;
@@ -27,34 +28,26 @@ public sealed class ClamavUtil : IClamavUtil
     private readonly IFileUtil _fileUtil;
     private readonly IDirectoryUtil _directoryUtil;
     private readonly IPathUtil _pathUtil;
+    private readonly IResourcesPathUtil _resourcesPathUtil;
     private readonly ILogger<ClamavUtil> _logger;
-    private readonly string _runtimeDirectory;
-    private readonly string _scannerPath;
-    private readonly string _defaultDatabaseDirectory;
-    private readonly Dictionary<string, string>? _environmentVariables;
+    private readonly bool _windows;
+    private readonly string _runtimeIdentifier;
 
     public ClamavUtil(IProcessUtil processUtil, IFreshclamUtil freshclamUtil, IFileUtil fileUtil, IDirectoryUtil directoryUtil, IPathUtil pathUtil,
-        ILogger<ClamavUtil> logger)
+        IResourcesPathUtil resourcesPathUtil, ILogger<ClamavUtil> logger)
     {
         _processUtil = processUtil ?? throw new ArgumentNullException(nameof(processUtil));
         _freshclamUtil = freshclamUtil ?? throw new ArgumentNullException(nameof(freshclamUtil));
         _fileUtil = fileUtil ?? throw new ArgumentNullException(nameof(fileUtil));
         _directoryUtil = directoryUtil ?? throw new ArgumentNullException(nameof(directoryUtil));
         _pathUtil = pathUtil ?? throw new ArgumentNullException(nameof(pathUtil));
+        _resourcesPathUtil = resourcesPathUtil ?? throw new ArgumentNullException(nameof(resourcesPathUtil));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         EnsureSupportedPlatform();
 
-        bool windows = RuntimeUtil.IsWindows();
-        string runtimeIdentifier = windows ? "win-x64" : "linux-x64";
-        _runtimeDirectory = Path.Combine(AppContext.BaseDirectory, "Resources", runtimeIdentifier, "clamav");
-        string binaryDirectory = windows ? _runtimeDirectory : Path.Combine(_runtimeDirectory, "bin");
-        _scannerPath = Path.Combine(binaryDirectory, windows ? "clamscan.exe" : "clamscan");
-        _defaultDatabaseDirectory = Path.Combine(AppContext.BaseDirectory, "Resources", "clamav-database");
-
-        if (!windows)
-            _environmentVariables = BuildLinuxEnvironment();
-
-        _logger.LogDebug("Initialized ClamAV for {RuntimeIdentifier} with runtime directory {RuntimeDirectory}", runtimeIdentifier, _runtimeDirectory);
+        _windows = RuntimeUtil.IsWindows();
+        _runtimeIdentifier = _windows ? "win-x64" : "linux-x64";
+        _logger.LogDebug("Initialized ClamAV for {RuntimeIdentifier}", _runtimeIdentifier);
     }
 
     public async ValueTask<ClamavScanResult> Scan(string path, ClamavScanOptions? options = null,
@@ -109,12 +102,13 @@ public sealed class ClamavUtil : IClamavUtil
 
     public async ValueTask<string> GetVersion(CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Reading bundled ClamAV version from {ScannerPath}", _scannerPath);
-        await EnsureToolExists(_scannerPath, "clamscan", cancellationToken).NoSync();
-        EnsureExecutable(_scannerPath);
+        (string runtimeDirectory, string scannerPath) = await GetRuntimePaths(cancellationToken).NoSync();
+        _logger.LogDebug("Reading bundled ClamAV version from {ScannerPath}", scannerPath);
+        await EnsureToolExists(scannerPath, "clamscan", cancellationToken).NoSync();
+        EnsureExecutable(scannerPath);
 
-        List<string> output = await _processUtil.Start(_scannerPath, _runtimeDirectory, "--version", log: false,
-            environmentalVars: _environmentVariables, cancellationToken: cancellationToken).NoSync();
+        List<string> output = await _processUtil.Start(scannerPath, runtimeDirectory, "--version", log: false,
+            environmentalVars: BuildEnvironment(runtimeDirectory), cancellationToken: cancellationToken).NoSync();
         string version = output.Count == 0 ? string.Empty : output[0];
         _logger.LogDebug("Bundled ClamAV version is {ClamavVersion}", version);
         return version;
@@ -124,10 +118,11 @@ public sealed class ClamavUtil : IClamavUtil
         CancellationToken cancellationToken)
     {
         Validate(options);
-        await EnsureToolExists(_scannerPath, "clamscan", cancellationToken).NoSync();
-        EnsureExecutable(_scannerPath);
+        (string runtimeDirectory, string scannerPath) = await GetRuntimePaths(cancellationToken).NoSync();
+        await EnsureToolExists(scannerPath, "clamscan", cancellationToken).NoSync();
+        EnsureExecutable(scannerPath);
 
-        string databaseDirectory = GetDatabaseDirectory(options.DatabaseDirectory);
+        string databaseDirectory = await GetDatabaseDirectory(options.DatabaseDirectory, cancellationToken).NoSync();
         if (options.UpdateDefinitions)
         {
             _logger.LogInformation("Checking for ClamAV definition updates in {DatabaseDirectory} before scanning", databaseDirectory);
@@ -153,8 +148,8 @@ public sealed class ClamavUtil : IClamavUtil
         {
             try
             {
-                output = await _processUtil.Start(_scannerPath, _runtimeDirectory, arguments, timeout: options.Timeout, log: false,
-                    environmentalVars: _environmentVariables, cancellationToken: cancellationToken).NoSync();
+                output = await _processUtil.Start(scannerPath, runtimeDirectory, arguments, timeout: options.Timeout, log: false,
+                    environmentalVars: BuildEnvironment(runtimeDirectory), cancellationToken: cancellationToken).NoSync();
             }
             catch (InvalidOperationException exception) when (IsThreatExitCode(exception))
             {
@@ -237,10 +232,12 @@ public sealed class ClamavUtil : IClamavUtil
         return detections;
     }
 
-    private Dictionary<string, string> BuildLinuxEnvironment()
+    private Dictionary<string, string>? BuildEnvironment(string runtimeDirectory)
     {
-        string libraryPath = string.Join(Path.PathSeparator,
-            Path.Combine(_runtimeDirectory, "lib64"), Path.Combine(_runtimeDirectory, "lib"));
+        if (_windows)
+            return null;
+
+        string libraryPath = string.Join(Path.PathSeparator, Path.Combine(runtimeDirectory, "lib64"), Path.Combine(runtimeDirectory, "lib"));
         string? existing = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH");
         if (!string.IsNullOrWhiteSpace(existing))
             libraryPath = string.IsNullOrEmpty(libraryPath) ? existing : $"{libraryPath}{Path.PathSeparator}{existing}";
@@ -248,12 +245,21 @@ public sealed class ClamavUtil : IClamavUtil
         return new Dictionary<string, string>
         {
             ["LD_LIBRARY_PATH"] = libraryPath,
-            ["CVD_CERTS_DIR"] = Path.Combine(_runtimeDirectory, "etc", "certs")
+            ["CVD_CERTS_DIR"] = Path.Combine(runtimeDirectory, "etc", "certs")
         };
     }
 
-    private string GetDatabaseDirectory(string? directory) =>
-        Path.GetFullPath(string.IsNullOrWhiteSpace(directory) ? _defaultDatabaseDirectory : directory);
+    private async ValueTask<(string RuntimeDirectory, string ScannerPath)> GetRuntimePaths(CancellationToken cancellationToken)
+    {
+        string runtimeDirectory = await _resourcesPathUtil.GetResourceFilePath(Path.Combine(_runtimeIdentifier, "clamav"), cancellationToken).NoSync();
+        string binaryDirectory = _windows ? runtimeDirectory : Path.Combine(runtimeDirectory, "bin");
+        return (runtimeDirectory, Path.Combine(binaryDirectory, _windows ? "clamscan.exe" : "clamscan"));
+    }
+
+    private async ValueTask<string> GetDatabaseDirectory(string? directory, CancellationToken cancellationToken) =>
+        string.IsNullOrWhiteSpace(directory)
+            ? await _resourcesPathUtil.GetResourceFilePath("clamav-database", cancellationToken).NoSync()
+            : Path.GetFullPath(directory);
 
     private static bool IsThreatExitCode(Exception exception)
     {
