@@ -8,10 +8,9 @@ A cross-platform .NET API for scanning files and directories with bundled offici
 
 ```bash
 dotnet add package Soenneker.Clamav.Util
-dotnet add package Soenneker.Clamav.Definitions
 ```
 
-`Soenneker.Clamav.Definitions` is optional but recommended for ephemeral containers. It copies a recent database seed into `Resources/clamav-database`; `freshclam` then updates that seed instead of downloading every full database when a new container starts. Pin the package version for reproducible application builds and update it through your normal dependency-update process.
+`Soenneker.Clamav.Util` depends on `Soenneker.Clamav.Definitions`. NuGet restore copies its recent database seed into `Resources/clamav-database`; FreshClam updates that same directory in place, allowing it to download incremental updates instead of every complete database.
 
 ## Quick start
 
@@ -52,7 +51,7 @@ var result = await clamav.Scan("uploads", new ClamavScanOptions
 });
 ```
 
-Set `UpdateDefinitions` to `true` to run FreshClam before every scan. By default, `UpdateDefinitionsIfMissing` remains enabled, so FreshClam runs only when no database is available.
+Set `UpdateDefinitions` to `true` to run FreshClam against the packaged seed before every scan. By default, `UpdateDefinitionsIfMissing` remains enabled, so FreshClam runs only when no database is available.
 
 Definitions can also be managed explicitly:
 
