@@ -125,8 +125,7 @@ public sealed class ClamavUtil : IClamavUtil
             string configuration = BuildFreshclamConfiguration();
             await _fileUtil.Write(configurationPath, configuration, log: false, cancellationToken).NoSync();
 
-            string arguments = $"--config-file={Quote(configurationPath)} --datadir={Quote(fullDatabaseDirectory)} " +
-                               $"--cvdcertsdir={Quote(_certificatesDirectory)} --stdout";
+            string arguments = $"--config-file={Quote(configurationPath)} --datadir={Quote(fullDatabaseDirectory)} --stdout";
             IReadOnlyList<string> output = await _processUtil.Start(_freshclamPath, _runtimeDirectory, arguments, log: false,
                 environmentalVars: _environmentVariables, cancellationToken: cancellationToken).NoSync();
             _logger.LogInformation("Updated ClamAV definitions in {DatabaseDirectory}; freshclam returned {OutputLineCount} output lines",
