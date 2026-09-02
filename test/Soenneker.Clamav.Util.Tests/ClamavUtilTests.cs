@@ -47,7 +47,7 @@ public sealed class ClamavUtilTests : HostedUnitTest
         try
         {
             await _fileUtil.Write(filePath, payload, log: false, cancellationToken: cancellationToken).NoSync();
-            string signature = $"{signatureName}:0:*:{Convert.ToHexString(Encoding.UTF8.GetBytes(payload))}";
+            var signature = $"{signatureName}:0:*:{Convert.ToHexString(Encoding.UTF8.GetBytes(payload))}";
             await _fileUtil.Write(databasePath, signature, log: false, cancellationToken: cancellationToken).NoSync();
 
             var options = new ClamavScanOptions

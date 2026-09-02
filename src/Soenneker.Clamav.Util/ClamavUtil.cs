@@ -9,7 +9,6 @@ using Soenneker.Clamav.Freshclam.Util.Abstract;
 using Soenneker.Clamav.Util.Abstract;
 using Soenneker.Clamav.Util.Options;
 using Soenneker.Clamav.Util.Results;
-using Soenneker.Extensions.Task;
 using Soenneker.Extensions.ValueTask;
 using Soenneker.Utils.Directory.Abstract;
 using Soenneker.Utils.File.Abstract;
@@ -33,8 +32,9 @@ public sealed class ClamavUtil : IClamavUtil
     private readonly bool _windows;
     private readonly string _runtimeIdentifier;
 
-    public ClamavUtil(IProcessUtil processUtil, IFreshclamUtil freshclamUtil, IFileUtil fileUtil, IDirectoryUtil directoryUtil, IPathUtil pathUtil,
-        IResourcesPathUtil resourcesPathUtil, ILogger<ClamavUtil> logger)
+    public ClamavUtil(IProcessUtil processUtil, IFreshclamUtil freshclamUtil, IFileUtil fileUtil,
+        IDirectoryUtil directoryUtil, IPathUtil pathUtil, IResourcesPathUtil resourcesPathUtil,
+        ILogger<ClamavUtil> logger)
     {
         _processUtil = processUtil;
         _freshclamUtil = freshclamUtil;
@@ -63,6 +63,7 @@ public sealed class ClamavUtil : IClamavUtil
             _logger.LogDebug("Resolved ClamAV scan target {TargetPath} as a file", fullPath);
             return await ScanFile(fullPath, options, cancellationToken).NoSync();
         }
+
         if (await _directoryUtil.Exists(fullPath, cancellationToken).NoSync())
         {
             _logger.LogDebug("Resolved ClamAV scan target {TargetPath} as a directory", fullPath);
@@ -82,7 +83,8 @@ public sealed class ClamavUtil : IClamavUtil
         if (!await _fileUtil.Exists(fullPath, cancellationToken).NoSync())
             throw new FileNotFoundException("The file to scan was not found.", fullPath);
 
-        return await ScanCore(fullPath, isDirectory: false, options ?? new ClamavScanOptions(), cancellationToken).NoSync();
+        return await ScanCore(fullPath, isDirectory: false, options ?? new ClamavScanOptions(), cancellationToken)
+            .NoSync();
     }
 
     public async ValueTask<ClamavScanResult> ScanDirectory(string directoryPath, ClamavScanOptions? options = null,
@@ -93,7 +95,8 @@ public sealed class ClamavUtil : IClamavUtil
         if (!await _directoryUtil.Exists(fullPath, cancellationToken).NoSync())
             throw new DirectoryNotFoundException($"The directory to scan was not found: {fullPath}");
 
-        return await ScanCore(fullPath, isDirectory: true, options ?? new ClamavScanOptions(), cancellationToken).NoSync();
+        return await ScanCore(fullPath, isDirectory: true, options ?? new ClamavScanOptions(), cancellationToken)
+            .NoSync();
     }
 
     public ValueTask<IReadOnlyList<string>> UpdateDefinitions(string? databaseDirectory = null,
@@ -125,31 +128,35 @@ public sealed class ClamavUtil : IClamavUtil
         string databaseDirectory = await GetDatabaseDirectory(options.DatabaseDirectory, cancellationToken).NoSync();
         if (options.UpdateDefinitions)
         {
-            _logger.LogInformation("Checking for ClamAV definition updates in {DatabaseDirectory} before scanning", databaseDirectory);
+            _logger.LogInformation("Checking for ClamAV definition updates in {DatabaseDirectory} before scanning",
+                databaseDirectory);
             await UpdateDefinitions(databaseDirectory, cancellationToken).NoSync();
         }
         else if (!await _freshclamUtil.HasDefinitions(databaseDirectory, cancellationToken).NoSync())
         {
-            _logger.LogWarning("No ClamAV definitions were found in {DatabaseDirectory}, and definition updates are disabled",
+            _logger.LogWarning(
+                "No ClamAV definitions were found in {DatabaseDirectory}, and definition updates are disabled",
                 databaseDirectory);
             throw new InvalidOperationException($"No ClamAV virus definitions were found in '{databaseDirectory}'.");
         }
 
         string logPath = await _pathUtil.GetRandomTempFilePath(".log", cancellationToken).NoSync();
         string arguments = BuildScanArguments(targetPath, databaseDirectory, logPath, isDirectory, options);
-        List<string> output;
         bool infected = false;
         string targetType = isDirectory ? "directory" : "file";
 
-        _logger.LogInformation("Starting ClamAV scan of {TargetType} {TargetPath} using definitions from {DatabaseDirectory}",
-            targetType, targetPath, databaseDirectory);
+        _logger.LogInformation(
+            "Starting ClamAV scan of {TargetType} {TargetPath} using definitions from {DatabaseDirectory}", targetType,
+            targetPath, databaseDirectory);
 
         try
         {
+            List<string> output;
             try
             {
-                output = await _processUtil.Start(scannerPath, runtimeDirectory, arguments, timeout: options.Timeout, log: false,
-                    environmentalVars: BuildEnvironment(runtimeDirectory), cancellationToken: cancellationToken).NoSync();
+                output = await _processUtil.Start(scannerPath, runtimeDirectory, arguments, timeout: options.Timeout,
+                    log: false, environmentalVars: BuildEnvironment(runtimeDirectory),
+                    cancellationToken: cancellationToken).NoSync();
             }
             catch (InvalidOperationException exception) when (IsThreatExitCode(exception))
             {
@@ -164,9 +171,12 @@ public sealed class ClamavUtil : IClamavUtil
             var result = new ClamavScanResult(targetPath, infected, detections, output);
 
             if (infected)
-                _logger.LogWarning("ClamAV detected {DetectionCount} threat(s) while scanning {TargetType} {TargetPath}", detections.Count, targetType, targetPath);
+                _logger.LogWarning(
+                    "ClamAV detected {DetectionCount} threat(s) while scanning {TargetType} {TargetPath}",
+                    detections.Count, targetType, targetPath);
             else
-                _logger.LogInformation("ClamAV scan completed cleanly for {TargetType} {TargetPath}", targetType, targetPath);
+                _logger.LogInformation("ClamAV scan completed cleanly for {TargetType} {TargetPath}", targetType,
+                    targetPath);
 
             return result;
         }
@@ -187,7 +197,8 @@ public sealed class ClamavUtil : IClamavUtil
         }
     }
 
-    private string BuildScanArguments(string targetPath, string databaseDirectory, string logPath, bool isDirectory, ClamavScanOptions options)
+    private string BuildScanArguments(string targetPath, string databaseDirectory, string logPath, bool isDirectory,
+        ClamavScanOptions options)
     {
         using var builder = new PooledStringBuilder(256);
         builder.Append("--database=");
@@ -216,7 +227,9 @@ public sealed class ClamavUtil : IClamavUtil
 
         foreach (string originalLine in output)
         {
-            string line = originalLine.StartsWith("[stderr] ", StringComparison.Ordinal) ? originalLine[9..] : originalLine;
+            string line = originalLine.StartsWith("[stderr] ", StringComparison.Ordinal)
+                ? originalLine[9..]
+                : originalLine;
             if (!line.EndsWith(" FOUND", StringComparison.Ordinal))
                 continue;
 
@@ -237,7 +250,8 @@ public sealed class ClamavUtil : IClamavUtil
         if (_windows)
             return null;
 
-        string libraryPath = string.Join(Path.PathSeparator, Path.Combine(runtimeDirectory, "lib64"), Path.Combine(runtimeDirectory, "lib"));
+        string libraryPath = string.Join(Path.PathSeparator, Path.Combine(runtimeDirectory, "lib64"),
+            Path.Combine(runtimeDirectory, "lib"));
         string? existing = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH");
         if (!string.IsNullOrWhiteSpace(existing))
             libraryPath = string.IsNullOrEmpty(libraryPath) ? existing : $"{libraryPath}{Path.PathSeparator}{existing}";
@@ -249,9 +263,12 @@ public sealed class ClamavUtil : IClamavUtil
         };
     }
 
-    private async ValueTask<(string RuntimeDirectory, string ScannerPath)> GetRuntimePaths(CancellationToken cancellationToken)
+    private async ValueTask<(string RuntimeDirectory, string ScannerPath)> GetRuntimePaths(
+        CancellationToken cancellationToken)
     {
-        string runtimeDirectory = await _resourcesPathUtil.GetResourceFilePath(Path.Combine(_runtimeIdentifier, "clamav"), cancellationToken).NoSync();
+        string runtimeDirectory = await _resourcesPathUtil
+                                        .GetResourceFilePath(Path.Combine(_runtimeIdentifier, "clamav"),
+                                            cancellationToken).NoSync();
         string binaryDirectory = _windows ? runtimeDirectory : Path.Combine(runtimeDirectory, "bin");
         return (runtimeDirectory, Path.Combine(binaryDirectory, _windows ? "clamscan.exe" : "clamscan"));
     }
@@ -279,7 +296,7 @@ public sealed class ClamavUtil : IClamavUtil
             return [];
 
         return new List<string>(exception.Message[(separator + Environment.NewLine.Length)..]
-            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+                                         .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
     }
 
     private static void Validate(ClamavScanOptions options)
@@ -303,16 +320,16 @@ public sealed class ClamavUtil : IClamavUtil
             return;
 
         File.SetUnixFileMode(path,
-            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead |
+            UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
     }
 
     private static void EnsureSupportedPlatform()
     {
         if (RuntimeInformation.ProcessArchitecture != Architecture.X64 ||
             (!RuntimeUtil.IsLinux() && !RuntimeUtil.IsWindows()))
-            throw new PlatformNotSupportedException("Soenneker.Clamav.Util currently supports Linux x64 and Windows x64.");
+            throw new PlatformNotSupportedException(
+                "Soenneker.Clamav.Util currently supports Linux x64 and Windows x64.");
     }
 
     private static string Quote(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
