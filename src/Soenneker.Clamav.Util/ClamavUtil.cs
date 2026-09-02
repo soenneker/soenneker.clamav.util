@@ -36,13 +36,13 @@ public sealed class ClamavUtil : IClamavUtil
     public ClamavUtil(IProcessUtil processUtil, IFreshclamUtil freshclamUtil, IFileUtil fileUtil, IDirectoryUtil directoryUtil, IPathUtil pathUtil,
         IResourcesPathUtil resourcesPathUtil, ILogger<ClamavUtil> logger)
     {
-        _processUtil = processUtil ?? throw new ArgumentNullException(nameof(processUtil));
-        _freshclamUtil = freshclamUtil ?? throw new ArgumentNullException(nameof(freshclamUtil));
-        _fileUtil = fileUtil ?? throw new ArgumentNullException(nameof(fileUtil));
-        _directoryUtil = directoryUtil ?? throw new ArgumentNullException(nameof(directoryUtil));
-        _pathUtil = pathUtil ?? throw new ArgumentNullException(nameof(pathUtil));
-        _resourcesPathUtil = resourcesPathUtil ?? throw new ArgumentNullException(nameof(resourcesPathUtil));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _processUtil = processUtil;
+        _freshclamUtil = freshclamUtil;
+        _fileUtil = fileUtil;
+        _directoryUtil = directoryUtil;
+        _pathUtil = pathUtil;
+        _resourcesPathUtil = resourcesPathUtil;
+        _logger = logger;
         EnsureSupportedPlatform();
 
         _windows = RuntimeUtil.IsWindows();
