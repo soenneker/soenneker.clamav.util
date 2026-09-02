@@ -69,4 +69,8 @@ var result = await clamav.ScanFile("sample.zip", new ClamavScanOptions
 
 Other operating systems and architectures throw `PlatformNotSupportedException`.
 
-The native packages are sourced from official [Cisco-Talos/clamav releases](https://github.com/Cisco-Talos/clamav/releases) and are distributed under GPL-2.0-only.
+## Licensing
+
+`Soenneker.Clamav.Util` is MIT-licensed. Its native package dependencies redistribute official ClamAV binaries under GPL-2.0-only; those terms apply to the bundled native payload. Each native package includes the GPL text, upstream third-party notices, and an exact corresponding-source reference in its runtime `SOURCE.txt`.
+
+See the official [Cisco-Talos/clamav releases](https://github.com/Cisco-Talos/clamav/releases) for upstream release and source materials.
