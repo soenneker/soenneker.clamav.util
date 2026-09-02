@@ -51,7 +51,7 @@ var result = await clamav.Scan("uploads", new ClamavScanOptions
 });
 ```
 
-By default, FreshClam checks for incremental updates to the packaged seed before every scan. Set `UpdateDefinitions` to `false` to skip that freshness check. If updates are disabled but the database is absent, `UpdateDefinitionsIfMissing` still controls whether FreshClam bootstraps it.
+By default, FreshClam checks for incremental updates to the packaged seed before every scan. Set `UpdateDefinitions` to `false` to disable definition updates; the scan will then require an existing database.
 
 Definitions can also be managed explicitly:
 
@@ -61,7 +61,7 @@ await clamav.UpdateDefinitions("data/clamav");
 var result = await clamav.ScanFile("sample.zip", new ClamavScanOptions
 {
     DatabaseDirectory = "data/clamav",
-    UpdateDefinitionsIfMissing = false
+    UpdateDefinitions = false
 });
 ```
 

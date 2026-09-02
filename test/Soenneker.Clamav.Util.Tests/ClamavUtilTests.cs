@@ -53,8 +53,7 @@ public sealed class ClamavUtilTests : HostedUnitTest
             var options = new ClamavScanOptions
             {
                 DatabaseDirectory = directory,
-                UpdateDefinitions = false,
-                UpdateDefinitionsIfMissing = false
+                UpdateDefinitions = false
             };
 
             ClamavScanResult result = await _util.ScanFile(filePath, options, cancellationToken: cancellationToken).NoSync();

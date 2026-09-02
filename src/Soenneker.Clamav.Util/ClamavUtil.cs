@@ -135,14 +135,9 @@ public sealed class ClamavUtil : IClamavUtil
         }
         else if (!await _freshclamUtil.HasDefinitions(databaseDirectory, cancellationToken).NoSync())
         {
-            if (!options.UpdateDefinitionsIfMissing)
-            {
-                _logger.LogWarning("No ClamAV definitions were found in {DatabaseDirectory}, and automatic updates are disabled", databaseDirectory);
-                throw new InvalidOperationException($"No ClamAV virus definitions were found in '{databaseDirectory}'.");
-            }
-
-            _logger.LogInformation("No ClamAV definitions were found in {DatabaseDirectory}; starting an update", databaseDirectory);
-            await UpdateDefinitions(databaseDirectory, cancellationToken).NoSync();
+            _logger.LogWarning("No ClamAV definitions were found in {DatabaseDirectory}, and definition updates are disabled",
+                databaseDirectory);
+            throw new InvalidOperationException($"No ClamAV virus definitions were found in '{databaseDirectory}'.");
         }
 
         string logPath = await _pathUtil.GetRandomTempFilePath(".log", cancellationToken).NoSync();

@@ -13,11 +13,6 @@ public sealed class ClamavScanOptions
     public string? DatabaseDirectory { get; set; }
 
     /// <summary>
-    /// Gets or sets whether missing virus definitions are downloaded before scanning. Defaults to <see langword="true"/>.
-    /// </summary>
-    public bool UpdateDefinitionsIfMissing { get; set; } = true;
-
-    /// <summary>
     /// Gets or sets whether FreshClam checks for definition updates before every scan, even when definitions already exist. Defaults to
     /// <see langword="true"/>.
     /// </summary>
