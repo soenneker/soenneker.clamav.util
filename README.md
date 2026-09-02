@@ -8,7 +8,10 @@ A cross-platform .NET API for scanning files and directories with bundled offici
 
 ```bash
 dotnet add package Soenneker.Clamav.Util
+dotnet add package Soenneker.Clamav.Definitions
 ```
+
+`Soenneker.Clamav.Definitions` is optional but recommended for ephemeral containers. It copies a recent database seed into `Resources/clamav-database`; `freshclam` then updates that seed instead of downloading every full database when a new container starts. Pin the package version for reproducible application builds and update it through your normal dependency-update process.
 
 ## Quick start
 
@@ -34,7 +37,7 @@ if (fileResult.IsInfected)
 var directoryResult = await clamav.ScanDirectory("uploads");
 ```
 
-Virus definitions are downloaded with `freshclam` before the first scan and stored in `Resources/clamav-database` beneath the application output directory. Use a custom writable location when appropriate:
+Virus definitions are updated with `freshclam` before the first scan when they are missing and stored in `Resources/clamav-database` beneath the application output directory. Use a custom writable location when appropriate:
 
 ```csharp
 using Soenneker.Clamav.Util.Options;
