@@ -51,7 +51,7 @@ var result = await clamav.Scan("uploads", new ClamavScanOptions
 });
 ```
 
-Set `UpdateDefinitions` to `true` to run FreshClam against the packaged seed before every scan. By default, `UpdateDefinitionsIfMissing` remains enabled, so FreshClam runs only when no database is available.
+By default, FreshClam checks for incremental updates to the packaged seed before every scan. Set `UpdateDefinitions` to `false` to skip that freshness check. If updates are disabled but the database is absent, `UpdateDefinitionsIfMissing` still controls whether FreshClam bootstraps it.
 
 Definitions can also be managed explicitly:
 

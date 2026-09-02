@@ -53,6 +53,7 @@ public sealed class ClamavUtilTests : HostedUnitTest
             var options = new ClamavScanOptions
             {
                 DatabaseDirectory = directory,
+                UpdateDefinitions = false,
                 UpdateDefinitionsIfMissing = false
             };
 
