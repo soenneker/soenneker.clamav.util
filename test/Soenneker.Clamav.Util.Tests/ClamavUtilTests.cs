@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Soenneker.Clamav.Util.Abstract;
 using Soenneker.Clamav.Util.Options;
@@ -28,26 +29,26 @@ public sealed class ClamavUtilTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Gets_bundled_version()
+    public async Task Gets_bundled_version(CancellationToken cancellationToken)
     {
-        string version = await _util.GetVersion().NoSync();
+        string version = await _util.GetVersion(cancellationToken: cancellationToken).NoSync();
         await Assert.That(version).StartsWith("ClamAV ");
     }
 
     [Test]
-    public async Task ScanFile_detects_matching_file_signature()
+    public async Task ScanFile_detects_matching_file_signature(CancellationToken cancellationToken)
     {
         const string payload = "Soenneker ClamAV deterministic test payload";
         const string signatureName = "Soenneker.Clamav.Test";
-        string directory = await _directoryUtil.CreateTempDirectory().NoSync();
+        string directory = await _directoryUtil.CreateTempDirectory(cancellationToken).NoSync();
         string filePath = Path.Combine(directory, "sample.txt");
         string databasePath = Path.Combine(directory, "local.ndb");
 
         try
         {
-            await _fileUtil.Write(filePath, payload, log: false).NoSync();
+            await _fileUtil.Write(filePath, payload, log: false, cancellationToken: cancellationToken).NoSync();
             string signature = $"{signatureName}:0:*:{Convert.ToHexString(Encoding.UTF8.GetBytes(payload))}";
-            await _fileUtil.Write(databasePath, signature, log: false).NoSync();
+            await _fileUtil.Write(databasePath, signature, log: false, cancellationToken: cancellationToken).NoSync();
 
             var options = new ClamavScanOptions
             {
@@ -55,7 +56,7 @@ public sealed class ClamavUtilTests : HostedUnitTest
                 UpdateDefinitionsIfMissing = false
             };
 
-            ClamavScanResult result = await _util.ScanFile(filePath, options).NoSync();
+            ClamavScanResult result = await _util.ScanFile(filePath, options, cancellationToken: cancellationToken).NoSync();
 
             await Assert.That(result.TargetPath).IsEqualTo(Path.GetFullPath(filePath));
             await Assert.That(result.IsInfected).IsTrue();
@@ -66,7 +67,7 @@ public sealed class ClamavUtilTests : HostedUnitTest
         }
         finally
         {
-            await _directoryUtil.DeleteIfExists(directory).NoSync();
+            await _directoryUtil.DeleteIfExists(directory, cancellationToken).NoSync();
         }
     }
 }
