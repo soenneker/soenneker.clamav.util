@@ -21,7 +21,7 @@ namespace Soenneker.Clamav.Util;
 public sealed class ClamavUtil : IClamavUtil
 {
     private static readonly SemaphoreSlim _definitionLock = new(1, 1);
-    private static readonly string[] _definitionExtensions = ["cvd", "cld", "cud"];
+    private static readonly string[] _definitionExtensions = ["cvd", "cld", "cud", "ndb"];
 
     private readonly IProcessUtil _processUtil;
     private readonly IFileUtil _fileUtil;

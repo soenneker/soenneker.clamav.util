@@ -18,6 +18,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="Soenneker.Extensions.Task" Version="4.0.128" />
         <PackageReference Include="Soenneker.Extensions.ValueTask" Version="4.0.120" />
         <PackageReference Include="Soenneker.Utils.Test" Version="4.0.327" />
         <PackageReference Include="Soenneker.Tests.HostedUnit" Version="4.0.229" />
