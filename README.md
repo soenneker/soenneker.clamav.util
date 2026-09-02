@@ -45,11 +45,14 @@ using Soenneker.Clamav.Util.Options;
 var result = await clamav.Scan("uploads", new ClamavScanOptions
 {
     DatabaseDirectory = "/var/lib/my-app/clamav",
+    UpdateDefinitions = true,
     DetectPotentiallyUnwantedApplications = true,
     AllMatches = true,
     Timeout = TimeSpan.FromMinutes(10)
 });
 ```
+
+Set `UpdateDefinitions` to `true` to run FreshClam before every scan. By default, `UpdateDefinitionsIfMissing` remains enabled, so FreshClam runs only when no database is available.
 
 Definitions can also be managed explicitly:
 

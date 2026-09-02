@@ -18,6 +18,12 @@ public sealed class ClamavScanOptions
     public bool UpdateDefinitionsIfMissing { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets whether FreshClam checks for definition updates before every scan, even when definitions already exist. Defaults to
+    /// <see langword="false"/>.
+    /// </summary>
+    public bool UpdateDefinitions { get; set; }
+
+    /// <summary>
     /// Gets or sets whether directory scans recurse into child directories. Defaults to <see langword="true"/>.
     /// </summary>
     public bool Recursive { get; set; } = true;

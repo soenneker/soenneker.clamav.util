@@ -128,7 +128,12 @@ public sealed class ClamavUtil : IClamavUtil
         EnsureExecutable(_scannerPath);
 
         string databaseDirectory = GetDatabaseDirectory(options.DatabaseDirectory);
-        if (!await _freshclamUtil.HasDefinitions(databaseDirectory, cancellationToken).NoSync())
+        if (options.UpdateDefinitions)
+        {
+            _logger.LogInformation("Checking for ClamAV definition updates in {DatabaseDirectory} before scanning", databaseDirectory);
+            await UpdateDefinitions(databaseDirectory, cancellationToken).NoSync();
+        }
+        else if (!await _freshclamUtil.HasDefinitions(databaseDirectory, cancellationToken).NoSync())
         {
             if (!options.UpdateDefinitionsIfMissing)
             {
