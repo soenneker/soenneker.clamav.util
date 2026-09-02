@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Soenneker.Clamav.Freshclam.Util.Abstract;
 using Soenneker.Clamav.Util.Abstract;
 using Soenneker.Clamav.Util.Options;
 using Soenneker.Clamav.Util.Results;
@@ -21,24 +22,22 @@ namespace Soenneker.Clamav.Util;
 
 public sealed class ClamavUtil : IClamavUtil
 {
-    private static readonly SemaphoreSlim _definitionLock = new(1, 1);
-    private static readonly string[] _definitionExtensions = ["cvd", "cld", "cud", "ndb"];
-
     private readonly IProcessUtil _processUtil;
+    private readonly IFreshclamUtil _freshclamUtil;
     private readonly IFileUtil _fileUtil;
     private readonly IDirectoryUtil _directoryUtil;
     private readonly IPathUtil _pathUtil;
     private readonly ILogger<ClamavUtil> _logger;
     private readonly string _runtimeDirectory;
     private readonly string _scannerPath;
-    private readonly string _freshclamPath;
-    private readonly string _certificatesDirectory;
     private readonly string _defaultDatabaseDirectory;
     private readonly Dictionary<string, string>? _environmentVariables;
 
-    public ClamavUtil(IProcessUtil processUtil, IFileUtil fileUtil, IDirectoryUtil directoryUtil, IPathUtil pathUtil, ILogger<ClamavUtil> logger)
+    public ClamavUtil(IProcessUtil processUtil, IFreshclamUtil freshclamUtil, IFileUtil fileUtil, IDirectoryUtil directoryUtil, IPathUtil pathUtil,
+        ILogger<ClamavUtil> logger)
     {
         _processUtil = processUtil ?? throw new ArgumentNullException(nameof(processUtil));
+        _freshclamUtil = freshclamUtil ?? throw new ArgumentNullException(nameof(freshclamUtil));
         _fileUtil = fileUtil ?? throw new ArgumentNullException(nameof(fileUtil));
         _directoryUtil = directoryUtil ?? throw new ArgumentNullException(nameof(directoryUtil));
         _pathUtil = pathUtil ?? throw new ArgumentNullException(nameof(pathUtil));
@@ -50,8 +49,6 @@ public sealed class ClamavUtil : IClamavUtil
         _runtimeDirectory = Path.Combine(AppContext.BaseDirectory, "Resources", runtimeIdentifier, "clamav");
         string binaryDirectory = windows ? _runtimeDirectory : Path.Combine(_runtimeDirectory, "bin");
         _scannerPath = Path.Combine(binaryDirectory, windows ? "clamscan.exe" : "clamscan");
-        _freshclamPath = Path.Combine(binaryDirectory, windows ? "freshclam.exe" : "freshclam");
-        _certificatesDirectory = windows ? Path.Combine(_runtimeDirectory, "certs") : Path.Combine(_runtimeDirectory, "etc", "certs");
         _defaultDatabaseDirectory = Path.Combine(AppContext.BaseDirectory, "Resources", "clamav-database");
 
         if (!windows)
@@ -106,48 +103,9 @@ public sealed class ClamavUtil : IClamavUtil
         return await ScanCore(fullPath, isDirectory: true, options ?? new ClamavScanOptions(), cancellationToken).NoSync();
     }
 
-    public async ValueTask<IReadOnlyList<string>> UpdateDefinitions(string? databaseDirectory = null,
-        CancellationToken cancellationToken = default)
-    {
-        await EnsureToolExists(_freshclamPath, "freshclam", cancellationToken).NoSync();
-        EnsureExecutable(_freshclamPath);
-
-        string fullDatabaseDirectory = GetDatabaseDirectory(databaseDirectory);
-        await _directoryUtil.Create(fullDatabaseDirectory, log: false, cancellationToken).NoSync();
-        string configurationPath = Path.Combine(fullDatabaseDirectory, "freshclam.conf");
-
-        _logger.LogInformation("Updating ClamAV definitions in {DatabaseDirectory}", fullDatabaseDirectory);
-        _logger.LogDebug("Waiting for the ClamAV definition update lock");
-        await _definitionLock.WaitAsync(cancellationToken).NoSync();
-        try
-        {
-            _logger.LogDebug("Acquired the ClamAV definition update lock");
-            string configuration = BuildFreshclamConfiguration();
-            await _fileUtil.Write(configurationPath, configuration, log: false, cancellationToken).NoSync();
-
-            string arguments = $"--config-file={Quote(configurationPath)} --datadir={Quote(fullDatabaseDirectory)} --stdout";
-            IReadOnlyList<string> output = await _processUtil.Start(_freshclamPath, _runtimeDirectory, arguments, log: false,
-                environmentalVars: _environmentVariables, cancellationToken: cancellationToken).NoSync();
-            _logger.LogInformation("Updated ClamAV definitions in {DatabaseDirectory}; freshclam returned {OutputLineCount} output lines",
-                fullDatabaseDirectory, output.Count);
-            return output;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _logger.LogInformation("ClamAV definition update was cancelled for {DatabaseDirectory}", fullDatabaseDirectory);
-            throw;
-        }
-        catch (Exception exception)
-        {
-            _logger.LogError(exception, "Failed to update ClamAV definitions in {DatabaseDirectory}", fullDatabaseDirectory);
-            throw;
-        }
-        finally
-        {
-            _definitionLock.Release();
-            _logger.LogDebug("Released the ClamAV definition update lock");
-        }
-    }
+    public ValueTask<IReadOnlyList<string>> UpdateDefinitions(string? databaseDirectory = null,
+        CancellationToken cancellationToken = default) =>
+        _freshclamUtil.Update(databaseDirectory, cancellationToken: cancellationToken);
 
     public async ValueTask<string> GetVersion(CancellationToken cancellationToken = default)
     {
@@ -170,7 +128,7 @@ public sealed class ClamavUtil : IClamavUtil
         EnsureExecutable(_scannerPath);
 
         string databaseDirectory = GetDatabaseDirectory(options.DatabaseDirectory);
-        if (!await HasDefinitions(databaseDirectory, cancellationToken).NoSync())
+        if (!await _freshclamUtil.HasDefinitions(databaseDirectory, cancellationToken).NoSync())
         {
             if (!options.UpdateDefinitionsIfMissing)
             {
@@ -292,41 +250,6 @@ public sealed class ClamavUtil : IClamavUtil
             ["LD_LIBRARY_PATH"] = libraryPath,
             ["CVD_CERTS_DIR"] = Path.Combine(_runtimeDirectory, "etc", "certs")
         };
-    }
-
-    private static string BuildFreshclamConfiguration()
-    {
-        using var builder = new PooledStringBuilder(160);
-        builder.AppendLine("DatabaseMirror database.clamav.net");
-        builder.AppendLine("ScriptedUpdates yes");
-        builder.AppendLine("CompressLocalDatabase no");
-        builder.AppendLine("Checks 12");
-
-        if (RuntimeUtil.IsLinux())
-        {
-            builder.Append("DatabaseOwner ");
-            builder.AppendLine(Environment.UserName);
-        }
-
-        return builder.ToString();
-    }
-
-    private async ValueTask<bool> HasDefinitions(string directory, CancellationToken cancellationToken)
-    {
-        if (!await _directoryUtil.Exists(directory, cancellationToken).NoSync())
-            return false;
-
-        foreach (string extension in _definitionExtensions)
-        {
-            if ((await _directoryUtil.GetFilesByExtension(directory, extension, recursive: false, cancellationToken).NoSync()).Count > 0)
-            {
-                _logger.LogDebug("Found ClamAV {DefinitionExtension} definitions in {DatabaseDirectory}", extension, directory);
-                return true;
-            }
-        }
-
-        _logger.LogDebug("No supported ClamAV definitions were found in {DatabaseDirectory}", directory);
-        return false;
     }
 
     private string GetDatabaseDirectory(string? directory) =>

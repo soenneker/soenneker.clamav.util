@@ -63,6 +63,8 @@ var result = await clamav.ScanFile("sample.zip", new ClamavScanOptions
 });
 ```
 
+Definition updates are delegated to `Soenneker.Clamav.Freshclam.Util`, which selects the separately packaged Linux or Windows FreshClam runtime.
+
 ## Supported environments
 
 | Operating system | Architecture | Bundled tool |

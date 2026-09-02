@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Soenneker.Clamav.Freshclam.Util.Registrars;
 using Soenneker.Clamav.Util.Abstract;
 using Soenneker.Utils.Directory.Registrars;
 using Soenneker.Utils.File.Registrars;
@@ -20,6 +21,7 @@ public static class ClamavUtilRegistrar
         services.AddDirectoryUtilAsSingleton()
                 .AddFileUtilAsSingleton()
                 .AddProcessUtilAsSingleton()
+                .AddFreshclamUtilAsSingleton()
                 .TryAddSingleton<IClamavUtil, ClamavUtil>();
 
         return services;
@@ -33,6 +35,7 @@ public static class ClamavUtilRegistrar
         services.AddDirectoryUtilAsScoped()
                 .AddFileUtilAsScoped()
                 .AddProcessUtilAsScoped()
+                .AddFreshclamUtilAsScoped()
                 .TryAddScoped<IClamavUtil, ClamavUtil>();
 
         return services;
