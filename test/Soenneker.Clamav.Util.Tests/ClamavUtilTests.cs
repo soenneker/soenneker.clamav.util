@@ -57,6 +57,7 @@ public sealed class ClamavUtilTests : HostedUnitTest
             };
 
             ClamavScanResult result = await _util.ScanFile(filePath, options, cancellationToken: cancellationToken).NoSync();
+            ClamavScanResult secondResult = await _util.ScanFile(filePath, options, cancellationToken: cancellationToken).NoSync();
 
             await Assert.That(result.TargetPath).IsEqualTo(Path.GetFullPath(filePath));
             await Assert.That(result.IsInfected).IsTrue();
@@ -64,6 +65,8 @@ public sealed class ClamavUtilTests : HostedUnitTest
             await Assert.That(result.Detections.Count).IsEqualTo(1);
             await Assert.That(result.Detections[0].Path).IsEqualTo(Path.GetFullPath(filePath));
             await Assert.That(result.Detections[0].Signature).IsEqualTo($"{signatureName}.UNOFFICIAL");
+            await Assert.That(secondResult.IsInfected).IsTrue();
+            await Assert.That(secondResult.Detections[0].Signature).IsEqualTo($"{signatureName}.UNOFFICIAL");
         }
         finally
         {

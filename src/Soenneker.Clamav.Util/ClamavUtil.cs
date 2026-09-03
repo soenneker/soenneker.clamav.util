@@ -20,6 +20,7 @@ using Soenneker.Utils.Path.Abstract;
 using Soenneker.Utils.Paths.Resources.Abstract;
 using Soenneker.Utils.PooledStringBuilders;
 using Soenneker.Utils.Process.Abstract;
+using Soenneker.Utils.Process.Dtos;
 using Soenneker.Utils.Runtime;
 
 namespace Soenneker.Clamav.Util;
@@ -34,9 +35,12 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
     private readonly IResourcesPathUtil _resourcesPathUtil;
     private readonly ILogger<ClamavUtil> _logger;
     private readonly ConcurrentDictionary<string, Lazy<AsyncInitializer>> _definitionInitializers;
-    private readonly SemaphoreSlim _scanGate;
+    private readonly ClamavUtilOptions _options;
     private readonly bool _windows;
     private readonly string _runtimeIdentifier;
+    private System.Diagnostics.Process? _daemonProcess;
+    private string? _daemonConfigPath;
+    private string? _daemonDatabaseDirectory;
 
     public ClamavUtil(IProcessUtil processUtil, IFreshclamUtil freshclamUtil, IFileUtil fileUtil,
         IDirectoryUtil directoryUtil, IPathUtil pathUtil, IResourcesPathUtil resourcesPathUtil,
@@ -51,12 +55,13 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
         _logger = logger;
         EnsureSupportedPlatform();
 
-        if (options.Value.MaxConcurrency < 1)
-            throw new ArgumentOutOfRangeException(nameof(options), options.Value.MaxConcurrency, "Maximum concurrency must be at least one.");
+        _options = options.Value;
+
+        if (_options.DaemonPort is < 1 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(options), _options.DaemonPort, "The daemon port must be between 1 and 65535.");
 
         _windows = RuntimeUtil.IsWindows();
         _runtimeIdentifier = _windows ? "win-x64" : "linux-x64";
-        _scanGate = new SemaphoreSlim(options.Value.MaxConcurrency, options.Value.MaxConcurrency);
         _definitionInitializers = new ConcurrentDictionary<string, Lazy<AsyncInitializer>>(
             _windows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         _logger.LogDebug("Initialized ClamAV for {RuntimeIdentifier}", _runtimeIdentifier);
@@ -155,10 +160,12 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
             throw new InvalidOperationException($"No ClamAV virus definitions were found in '{databaseDirectory}'.");
         }
 
+        bool useDaemon = CanUseDaemon(isDirectory, options);
         string logPath = await _pathUtil.GetRandomTempFilePath(".log", cancellationToken).NoSync();
-        string arguments = BuildScanArguments(targetPath, databaseDirectory, logPath, isDirectory, options);
+        string arguments = useDaemon
+            ? string.Empty
+            : BuildScanArguments(targetPath, databaseDirectory, logPath, isDirectory, options);
         bool infected = false;
-        bool gateAcquired = false;
         string targetType = isDirectory ? "directory" : "file";
 
         _logger.LogInformation(
@@ -167,8 +174,11 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
 
         try
         {
-            await _scanGate.WaitAsync(cancellationToken).NoSync();
-            gateAcquired = true;
+            if (useDaemon)
+            {
+                (scannerPath, arguments) = await PrepareDaemonScan(runtimeDirectory, databaseDirectory, targetPath, logPath,
+                    options, cancellationToken).NoSync();
+            }
 
             List<string> output;
             try
@@ -211,12 +221,94 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
         }
         finally
         {
-            if (gateAcquired)
-                _scanGate.Release();
-
             await _fileUtil.TryDelete(logPath, log: false, CancellationToken.None).NoSync();
             _logger.LogDebug("Removed temporary ClamAV scan log {LogPath}", logPath);
         }
+    }
+
+    private bool CanUseDaemon(bool isDirectory, ClamavScanOptions options)
+    {
+        if (!_options.UseDaemon)
+            return false;
+
+        bool unsupported = options.DetectPotentiallyUnwantedApplications || options.FollowFileSymbolicLinks ||
+                           options.FollowDirectorySymbolicLinks || (isDirectory && !options.Recursive);
+
+        if (unsupported)
+            _logger.LogDebug("Using clamscan because the requested scan options cannot be applied per request by clamd");
+
+        return !unsupported;
+    }
+
+    private async ValueTask<(string ScannerPath, string Arguments)> PrepareDaemonScan(string runtimeDirectory,
+        string databaseDirectory, string targetPath, string logPath, ClamavScanOptions options,
+        CancellationToken cancellationToken)
+    {
+        await EnsureDaemon(runtimeDirectory, databaseDirectory, cancellationToken).NoSync();
+
+        string scannerPath = Path.Combine(_windows ? runtimeDirectory : Path.Combine(runtimeDirectory, "bin"),
+            _windows ? "clamdscan.exe" : "clamdscan");
+        await EnsureToolExists(scannerPath, "clamdscan", cancellationToken).NoSync();
+        EnsureExecutable(scannerPath);
+
+        using var builder = new PooledStringBuilder(256);
+        builder.Append("--config-file=");
+        builder.Append(Quote(_daemonConfigPath!));
+        builder.Append(" --wait --ping=120:1 --no-summary --stdout --log=");
+        builder.Append(Quote(logPath));
+        if (options.AllMatches)
+            builder.Append(" --allmatch");
+        builder.Append(' ');
+        builder.Append(Quote(targetPath));
+        return (scannerPath, builder.ToString());
+    }
+
+    private async ValueTask EnsureDaemon(string runtimeDirectory, string databaseDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (_daemonProcess is not null && !_daemonProcess.HasExited)
+        {
+            if (!string.Equals(_daemonDatabaseDirectory, databaseDirectory,
+                    _windows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"The running ClamAV daemon uses '{_daemonDatabaseDirectory}', not '{databaseDirectory}'.");
+            }
+
+            return;
+        }
+
+        _daemonProcess?.Dispose();
+        _daemonProcess = null;
+
+        string daemonPath = Path.Combine(_windows ? runtimeDirectory : Path.Combine(runtimeDirectory, "sbin"),
+            _windows ? "clamd.exe" : "clamd");
+        await EnsureToolExists(daemonPath, "clamd", cancellationToken).NoSync();
+        EnsureExecutable(daemonPath);
+
+        _daemonConfigPath ??= await _pathUtil.GetRandomTempFilePath(".clamd.conf", cancellationToken).NoSync();
+        string config = $"TCPSocket {_options.DaemonPort}{Environment.NewLine}" +
+                        $"TCPAddr 127.0.0.1{Environment.NewLine}";
+        await File.WriteAllTextAsync(_daemonConfigPath, config, cancellationToken).NoSync();
+
+        var dto = new ProcessStartDto
+        {
+            FileName = daemonPath,
+            WorkingDirectory = runtimeDirectory,
+            Arguments = $"--foreground --datadir={Quote(databaseDirectory)} --config-file={Quote(_daemonConfigPath)}",
+            EnvironmentVariables = BuildEnvironment(runtimeDirectory),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            Log = false,
+            OutputCallback = line => _logger.LogDebug("clamd: {Output}", line),
+            ErrorCallback = line => _logger.LogWarning("clamd: {Output}", line)
+        };
+
+        cancellationToken.ThrowIfCancellationRequested();
+        _daemonProcess = await _processUtil.StartDetached(dto, CancellationToken.None).NoSync() ??
+                         throw new InvalidOperationException("The ClamAV daemon could not be started.");
+        _daemonDatabaseDirectory = databaseDirectory;
+        _logger.LogInformation("Started persistent ClamAV daemon process {ProcessId}", _daemonProcess.Id);
     }
 
     private string BuildScanArguments(string targetPath, string databaseDirectory, string logPath, bool isDirectory,
@@ -364,6 +456,32 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
                 initializer.Value.Dispose();
         }
 
-        _scanGate.Dispose();
+        if (_daemonProcess is not null)
+        {
+            try
+            {
+                if (!_daemonProcess.HasExited)
+                    _daemonProcess.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            _daemonProcess.Dispose();
+        }
+
+        if (_daemonConfigPath is not null)
+        {
+            try
+            {
+                File.Delete(_daemonConfigPath);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
     }
 }

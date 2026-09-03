@@ -21,7 +21,7 @@ using Soenneker.Clamav.Util.Registrars;
 
 await using ServiceProvider provider = new ServiceCollection()
     .AddLogging()
-    .AddClamavUtilAsSingleton(options => options.MaxConcurrency = 4)
+    .AddClamavUtilAsSingleton()
     .BuildServiceProvider();
 
 IClamavUtil clamav = provider.GetRequiredService<IClamavUtil>();
@@ -53,7 +53,18 @@ var result = await clamav.Scan("uploads", new ClamavScanOptions
 
 By default, FreshClam checks for incremental updates to the packaged seed before the first scan for each database directory. Set `UpdateDefinitions` to `false` to skip initialization; the scan will then require an existing database. Call `UpdateDefinitions` explicitly when the definitions need to be refreshed later.
 
-`MaxConcurrency` limits the number of `clamscan` processes within one `ClamavUtil` instance. Singleton registration provides an application-wide limit. Scoped registration creates a separate limit and definition initializer for every scope.
+`ClamavUtil` does not schedule or serialize scan requests. Applications that require bounded or sequential processing should coordinate calls before invoking the utility.
+
+Services that scan repeatedly can keep the signature database loaded in a managed `clamd` process:
+
+```csharp
+services.AddClamavUtilAsSingleton(options =>
+{
+    options.UseDaemon = true;
+});
+```
+
+Daemon mode starts lazily on the first scan and is stopped when the utility is disposed. Scan options that cannot be changed per request by `clamd` automatically fall back to `clamscan`.
 
 Definitions can also be managed explicitly:
 
@@ -73,8 +84,8 @@ Definition updates are delegated to `Soenneker.Clamav.Freshclam.Util`, which sel
 
 | Operating system | Architecture | Bundled tool |
 | --- | --- | --- |
-| Windows | x64 | `clamscan.exe` |
-| Linux | x64 | `clamscan` |
+| Windows | x64 | `clamscan.exe`, `clamd.exe`, `clamdscan.exe` |
+| Linux | x64 | `clamscan`, `clamd`, `clamdscan` |
 
 Other operating systems and architectures throw `PlatformNotSupportedException`.
 

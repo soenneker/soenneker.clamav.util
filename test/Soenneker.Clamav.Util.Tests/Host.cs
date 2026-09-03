@@ -27,6 +27,9 @@ public sealed class Host : UnitTestHost
         IConfiguration config = TestUtil.BuildConfig();
         services.AddSingleton(config);
 
-        services.AddClamavUtilAsScoped();
+        services.AddClamavUtilAsScoped(options =>
+        {
+            options.UseDaemon = true;
+        });
     }
 }
