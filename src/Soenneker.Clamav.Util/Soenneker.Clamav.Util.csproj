@@ -43,18 +43,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Soenneker.Extensions.Task" Version="4.0.128" />
-        <PackageReference Include="Soenneker.Extensions.ValueTask" Version="4.0.120" />
         <PackageReference Include="Soenneker.Clamav.Definitions" Version="4.0" PrivateAssets="analyzers;build" />
         <PackageReference Include="Soenneker.Clamav.Freshclam.Util" Version="4.0.4" PrivateAssets="analyzers;build" />
         <PackageReference Include="Soenneker.Clamav.Linux" Version="4.0.4" PrivateAssets="analyzers;build" />
         <PackageReference Include="Soenneker.Clamav.Windows" Version="4.0.2" PrivateAssets="analyzers;build" />
-        <PackageReference Include="Soenneker.Utils.Directory" Version="4.0.916" />
-        <PackageReference Include="Soenneker.Utils.File" Version="4.0.2246" />
-        <PackageReference Include="Soenneker.Utils.Path" Version="4.0.1209" />
-        <PackageReference Include="Soenneker.Utils.Paths.Resources" Version="4.0.229" />
-        <PackageReference Include="Soenneker.Utils.PooledStringBuilders" Version="4.0.29" />
-        <PackageReference Include="Soenneker.Utils.Process" Version="4.0.1534" />
-        <PackageReference Include="Soenneker.Utils.Runtime" Version="4.0.1086" />
     </ItemGroup>
 </Project>
