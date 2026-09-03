@@ -13,8 +13,8 @@ public sealed class ClamavScanOptions
     public string? DatabaseDirectory { get; set; }
 
     /// <summary>
-    /// Gets or sets whether FreshClam checks for definition updates before every scan, even when definitions already exist. Defaults to
-    /// <see langword="true"/>.
+    /// Gets or sets whether FreshClam initializes the definitions before the first scan for the selected database directory. Concurrent
+    /// callers share the same initialization. Defaults to <see langword="true"/>.
     /// </summary>
     public bool UpdateDefinitions { get; set; } = true;
 

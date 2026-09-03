@@ -1,14 +1,18 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Soenneker.Asyncs.Initializers;
 using Soenneker.Clamav.Freshclam.Util.Abstract;
 using Soenneker.Clamav.Util.Abstract;
 using Soenneker.Clamav.Util.Options;
 using Soenneker.Clamav.Util.Results;
+using Soenneker.Extensions.Task;
 using Soenneker.Extensions.ValueTask;
 using Soenneker.Utils.Directory.Abstract;
 using Soenneker.Utils.File.Abstract;
@@ -20,7 +24,7 @@ using Soenneker.Utils.Runtime;
 
 namespace Soenneker.Clamav.Util;
 
-public sealed class ClamavUtil : IClamavUtil
+public sealed class ClamavUtil : IClamavUtil, IDisposable
 {
     private readonly IProcessUtil _processUtil;
     private readonly IFreshclamUtil _freshclamUtil;
@@ -29,12 +33,14 @@ public sealed class ClamavUtil : IClamavUtil
     private readonly IPathUtil _pathUtil;
     private readonly IResourcesPathUtil _resourcesPathUtil;
     private readonly ILogger<ClamavUtil> _logger;
+    private readonly ConcurrentDictionary<string, Lazy<AsyncInitializer>> _definitionInitializers;
+    private readonly SemaphoreSlim _scanGate;
     private readonly bool _windows;
     private readonly string _runtimeIdentifier;
 
     public ClamavUtil(IProcessUtil processUtil, IFreshclamUtil freshclamUtil, IFileUtil fileUtil,
         IDirectoryUtil directoryUtil, IPathUtil pathUtil, IResourcesPathUtil resourcesPathUtil,
-        ILogger<ClamavUtil> logger)
+        ILogger<ClamavUtil> logger, IOptions<ClamavUtilOptions> options)
     {
         _processUtil = processUtil;
         _freshclamUtil = freshclamUtil;
@@ -45,8 +51,14 @@ public sealed class ClamavUtil : IClamavUtil
         _logger = logger;
         EnsureSupportedPlatform();
 
+        if (options.Value.MaxConcurrency < 1)
+            throw new ArgumentOutOfRangeException(nameof(options), options.Value.MaxConcurrency, "Maximum concurrency must be at least one.");
+
         _windows = RuntimeUtil.IsWindows();
         _runtimeIdentifier = _windows ? "win-x64" : "linux-x64";
+        _scanGate = new SemaphoreSlim(options.Value.MaxConcurrency, options.Value.MaxConcurrency);
+        _definitionInitializers = new ConcurrentDictionary<string, Lazy<AsyncInitializer>>(
+            _windows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         _logger.LogDebug("Initialized ClamAV for {RuntimeIdentifier}", _runtimeIdentifier);
     }
 
@@ -128,9 +140,12 @@ public sealed class ClamavUtil : IClamavUtil
         string databaseDirectory = await GetDatabaseDirectory(options.DatabaseDirectory, cancellationToken).NoSync();
         if (options.UpdateDefinitions)
         {
-            _logger.LogInformation("Checking for ClamAV definition updates in {DatabaseDirectory} before scanning",
+            _logger.LogInformation("Ensuring ClamAV definitions are initialized in {DatabaseDirectory}",
                 databaseDirectory);
-            await UpdateDefinitions(databaseDirectory, cancellationToken).NoSync();
+            Lazy<AsyncInitializer> initializer = _definitionInitializers.GetOrAdd(databaseDirectory,
+                directory => new Lazy<AsyncInitializer>(() =>
+                    new AsyncInitializer(token => UpdateDefinitions(directory, token))));
+            await initializer.Value.Init(cancellationToken).NoSync();
         }
         else if (!await _freshclamUtil.HasDefinitions(databaseDirectory, cancellationToken).NoSync())
         {
@@ -143,6 +158,7 @@ public sealed class ClamavUtil : IClamavUtil
         string logPath = await _pathUtil.GetRandomTempFilePath(".log", cancellationToken).NoSync();
         string arguments = BuildScanArguments(targetPath, databaseDirectory, logPath, isDirectory, options);
         bool infected = false;
+        bool gateAcquired = false;
         string targetType = isDirectory ? "directory" : "file";
 
         _logger.LogInformation(
@@ -151,6 +167,9 @@ public sealed class ClamavUtil : IClamavUtil
 
         try
         {
+            await _scanGate.WaitAsync(cancellationToken).NoSync();
+            gateAcquired = true;
+
             List<string> output;
             try
             {
@@ -192,6 +211,9 @@ public sealed class ClamavUtil : IClamavUtil
         }
         finally
         {
+            if (gateAcquired)
+                _scanGate.Release();
+
             await _fileUtil.TryDelete(logPath, log: false, CancellationToken.None).NoSync();
             _logger.LogDebug("Removed temporary ClamAV scan log {LogPath}", logPath);
         }
@@ -333,4 +355,15 @@ public sealed class ClamavUtil : IClamavUtil
     }
 
     private static string Quote(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
+
+    public void Dispose()
+    {
+        foreach (Lazy<AsyncInitializer> initializer in _definitionInitializers.Values)
+        {
+            if (initializer.IsValueCreated)
+                initializer.Value.Dispose();
+        }
+
+        _scanGate.Dispose();
+    }
 }

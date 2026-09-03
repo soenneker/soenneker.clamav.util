@@ -1,7 +1,9 @@
+using System;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Soenneker.Clamav.Freshclam.Util.Registrars;
 using Soenneker.Clamav.Util.Abstract;
+using Soenneker.Clamav.Util.Options;
 using Soenneker.Utils.Directory.Registrars;
 using Soenneker.Utils.File.Registrars;
 using Soenneker.Utils.Paths.Resources.Registrars;
@@ -17,8 +19,16 @@ public static class ClamavUtilRegistrar
     /// <summary>
     /// Adds <see cref="IClamavUtil"/> as a singleton service. <para/>
     /// </summary>
-    public static IServiceCollection AddClamavUtilAsSingleton(this IServiceCollection services)
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">An optional callback for configuring shared scan behavior.</param>
+    /// <returns>The service collection.</returns>
+    public static IServiceCollection AddClamavUtilAsSingleton(this IServiceCollection services, Action<ClamavUtilOptions>? configure = null)
     {
+        services.AddOptions<ClamavUtilOptions>();
+
+        if (configure is not null)
+            services.Configure(configure);
+
         services.AddDirectoryUtilAsSingleton()
                 .AddFileUtilAsSingleton()
                 .AddResourcesPathUtilAsSingleton()
@@ -32,8 +42,16 @@ public static class ClamavUtilRegistrar
     /// <summary>
     /// Adds <see cref="IClamavUtil"/> as a scoped service. <para/>
     /// </summary>
-    public static IServiceCollection AddClamavUtilAsScoped(this IServiceCollection services)
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">An optional callback for configuring scan behavior within each scope.</param>
+    /// <returns>The service collection.</returns>
+    public static IServiceCollection AddClamavUtilAsScoped(this IServiceCollection services, Action<ClamavUtilOptions>? configure = null)
     {
+        services.AddOptions<ClamavUtilOptions>();
+
+        if (configure is not null)
+            services.Configure(configure);
+
         services.AddDirectoryUtilAsScoped()
                 .AddFileUtilAsScoped()
                 .AddResourcesPathUtilAsScoped()

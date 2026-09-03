@@ -21,7 +21,7 @@ using Soenneker.Clamav.Util.Registrars;
 
 await using ServiceProvider provider = new ServiceCollection()
     .AddLogging()
-    .AddClamavUtilAsSingleton()
+    .AddClamavUtilAsSingleton(options => options.MaxConcurrency = 4)
     .BuildServiceProvider();
 
 IClamavUtil clamav = provider.GetRequiredService<IClamavUtil>();
@@ -36,7 +36,7 @@ if (fileResult.IsInfected)
 var directoryResult = await clamav.ScanDirectory("uploads");
 ```
 
-Virus definitions are updated with `freshclam` before the first scan when they are missing and stored in `Resources/clamav-database` beneath the application output directory. Use a custom writable location when appropriate:
+Virus definitions are updated with `freshclam` once before the first scan and stored in `Resources/clamav-database` beneath the application output directory. Concurrent first scans share that initialization operation. Use a custom writable location when appropriate:
 
 ```csharp
 using Soenneker.Clamav.Util.Options;
@@ -51,7 +51,9 @@ var result = await clamav.Scan("uploads", new ClamavScanOptions
 });
 ```
 
-By default, FreshClam checks for incremental updates to the packaged seed before every scan. Set `UpdateDefinitions` to `false` to disable definition updates; the scan will then require an existing database.
+By default, FreshClam checks for incremental updates to the packaged seed before the first scan for each database directory. Set `UpdateDefinitions` to `false` to skip initialization; the scan will then require an existing database. Call `UpdateDefinitions` explicitly when the definitions need to be refreshed later.
+
+`MaxConcurrency` limits the number of `clamscan` processes within one `ClamavUtil` instance. Singleton registration provides an application-wide limit. Scoped registration creates a separate limit and definition initializer for every scope.
 
 Definitions can also be managed explicitly:
 
