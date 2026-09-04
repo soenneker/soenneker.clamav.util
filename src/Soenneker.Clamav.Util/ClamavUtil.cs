@@ -25,6 +25,7 @@ using Soenneker.Utils.Runtime;
 
 namespace Soenneker.Clamav.Util;
 
+/// <inheritdoc cref="IClamavUtil" />
 public sealed class ClamavUtil : IClamavUtil, IDisposable
 {
     private readonly IProcessUtil _processUtil;
