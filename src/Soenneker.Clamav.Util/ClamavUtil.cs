@@ -342,11 +342,12 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
 
         foreach (string originalLine in output)
         {
+            if (!originalLine.EndsWith(" FOUND", StringComparison.Ordinal))
+                continue;
+
             string line = originalLine.StartsWith("[stderr] ", StringComparison.Ordinal)
                 ? originalLine[9..]
                 : originalLine;
-            if (!line.EndsWith(" FOUND", StringComparison.Ordinal))
-                continue;
 
             int separator = line.LastIndexOf(": ", line.Length - 7, StringComparison.Ordinal);
             if (separator <= 0)
