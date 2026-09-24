@@ -290,7 +290,7 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
         _daemonConfigPath ??= await _pathUtil.GetRandomTempFilePath(".clamd.conf", cancellationToken).NoSync();
         string config = $"TCPSocket {_options.DaemonPort}{Environment.NewLine}" +
                         $"TCPAddr 127.0.0.1{Environment.NewLine}";
-        await File.WriteAllTextAsync(_daemonConfigPath, config, cancellationToken).NoSync();
+        await _fileUtil.Write(_daemonConfigPath, config, cancellationToken: cancellationToken).NoSync();
 
         var dto = new ProcessStartDto
         {
@@ -476,6 +476,7 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
         {
             try
             {
+                // IDisposable cleanup is synchronous; do not block on the asynchronous FileUtil.Delete.
                 File.Delete(_daemonConfigPath);
             }
             catch (IOException)
