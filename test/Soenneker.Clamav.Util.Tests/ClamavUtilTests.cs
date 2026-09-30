@@ -29,14 +29,14 @@ public sealed class ClamavUtilTests : HostedUnitTest
     }
 
     [Test]
-    public async Task Gets_bundled_version(CancellationToken cancellationToken)
+    public async ValueTask Gets_bundled_version(CancellationToken cancellationToken)
     {
         string version = await _util.GetVersion(cancellationToken: cancellationToken).NoSync();
         await Assert.That(version).StartsWith("ClamAV ");
     }
 
     [Test]
-    public async Task ScanFile_detects_matching_file_signature(CancellationToken cancellationToken)
+    public async ValueTask ScanFile_detects_matching_file_signature(CancellationToken cancellationToken)
     {
         const string payload = "Soenneker ClamAV deterministic test payload";
         const string signatureName = "Soenneker.Clamav.Test";
