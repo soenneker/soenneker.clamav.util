@@ -53,6 +53,6 @@
         <PackageReference Include="Soenneker.Clamav.Windows" Version="4.0.2" PrivateAssets="analyzers;build" />
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="Soenneker.Extensions.ValueTask" Version="4.0.132" />
+        <PackageReference Include="Soenneker.Extensions.ValueTask" Version="4.0.133" />
     </ItemGroup>
 </Project>
