@@ -47,7 +47,7 @@
     <ItemGroup>
         <PackageReference Include="Soenneker.Asyncs.Initializers" Version="11.0.131" />
         <PackageReference Include="Soenneker.Clamav.Definitions" Version="4.0.111" PrivateAssets="analyzers;build" />
-        <PackageReference Include="Soenneker.Clamav.Freshclam.Util" Version="4.0.81" PrivateAssets="analyzers;build" />
+        <PackageReference Include="Soenneker.Clamav.Freshclam.Util" Version="11.0.82" PrivateAssets="analyzers;build" />
         <PackageReference Include="Soenneker.Clamav.Linux" Version="4.0.4" PrivateAssets="analyzers;build" />
         <PackageReference Include="Soenneker.Clamav.Windows" Version="4.0.2" PrivateAssets="analyzers;build" />
     </ItemGroup>
