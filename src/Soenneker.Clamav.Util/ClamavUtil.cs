@@ -65,7 +65,8 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
         _runtimeIdentifier = _windows ? "win-x64" : "linux-x64";
         _definitionInitializers = new ConcurrentDictionary<string, Lazy<AsyncInitializer>>(
             _windows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        _logger.LogDebug("Initialized ClamAV for {RuntimeIdentifier}", _runtimeIdentifier);
+        if (_logger.IsEnabled(LogLevel.Debug))
+            _logger.LogDebug("Initialized ClamAV for {RuntimeIdentifier}", _runtimeIdentifier);
     }
 
     public async ValueTask<ClamavScanResult> Scan(string path, ClamavScanOptions? options = null,
@@ -74,17 +75,20 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         string fullPath = Path.GetFullPath(path);
 
-        _logger.LogDebug("Resolving ClamAV scan target {TargetPath}", fullPath);
+        if (_logger.IsEnabled(LogLevel.Debug))
+            _logger.LogDebug("Resolving ClamAV scan target {TargetPath}", fullPath);
 
         if (await _fileUtil.Exists(fullPath, cancellationToken).NoSync())
         {
-            _logger.LogDebug("Resolved ClamAV scan target {TargetPath} as a file", fullPath);
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Resolved ClamAV scan target {TargetPath} as a file", fullPath);
             return await ScanFile(fullPath, options, cancellationToken).NoSync();
         }
 
         if (await _directoryUtil.Exists(fullPath, cancellationToken).NoSync())
         {
-            _logger.LogDebug("Resolved ClamAV scan target {TargetPath} as a directory", fullPath);
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Resolved ClamAV scan target {TargetPath} as a directory", fullPath);
             return await ScanDirectory(fullPath, options, cancellationToken).NoSync();
         }
 
@@ -124,14 +128,16 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
     public async ValueTask<string> GetVersion(CancellationToken cancellationToken = default)
     {
         (string runtimeDirectory, string scannerPath) = await GetRuntimePaths(cancellationToken).NoSync();
-        _logger.LogDebug("Reading bundled ClamAV version from {ScannerPath}", scannerPath);
+        if (_logger.IsEnabled(LogLevel.Debug))
+            _logger.LogDebug("Reading bundled ClamAV version from {ScannerPath}", scannerPath);
         await EnsureToolExists(scannerPath, "clamscan", cancellationToken).NoSync();
         EnsureExecutable(scannerPath);
 
         List<string> output = await _processUtil.Start(scannerPath, runtimeDirectory, "--version", log: false,
             environmentalVars: BuildEnvironment(runtimeDirectory), cancellationToken: cancellationToken).NoSync();
         string version = output.Count == 0 ? string.Empty : output[0];
-        _logger.LogDebug("Bundled ClamAV version is {ClamavVersion}", version);
+        if (_logger.IsEnabled(LogLevel.Debug))
+            _logger.LogDebug("Bundled ClamAV version is {ClamavVersion}", version);
         return version;
     }
 
@@ -223,7 +229,8 @@ public sealed class ClamavUtil : IClamavUtil, IDisposable
         finally
         {
             await _fileUtil.TryDelete(logPath, log: false, CancellationToken.None).NoSync();
-            _logger.LogDebug("Removed temporary ClamAV scan log {LogPath}", logPath);
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Removed temporary ClamAV scan log {LogPath}", logPath);
         }
     }
 
